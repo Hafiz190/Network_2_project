@@ -36,7 +36,14 @@ void load_credentials(const char *filename) {
     fclose(file);
 }
 
-
+int authenticate(const char *username, const char *password) {
+    for (int i = 0; i < num_users; ++i) {
+        if (strcmp(credentials[i].username, username) == 0 && strcmp(credentials[i].password, password) == 0) {
+            return 1; // Authentication successful
+        }
+    }
+    return 0; // Authentication failed
+}
 
 void load_credentials(const char *filename);
 int authenticate(const char *username, const char *password);
