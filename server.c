@@ -22,6 +22,22 @@ int num_users = 0;
 char base_directory[MAX_FILE_PATH_SIZE];
 int server_port;
 
+void load_credentials(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Failed to open password file");
+        exit(EXIT_FAILURE);
+    }
+
+    while (fscanf(file, "%49[^:]:%49s", credentials[num_users].username, credentials[num_users].password) == 2) {
+        num_users++;
+        if (num_users >= MAX_CREDENTIALS) break;
+    }
+    fclose(file);
+}
+
+
+
 void load_credentials(const char *filename);
 int authenticate(const char *username, const char *password);
 
@@ -53,5 +69,4 @@ int main(int argc, char *argv[]) {
 
     load_credentials(password_file);
 
-    // Server setup and other logic will be added in subsequent commits
 }
