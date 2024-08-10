@@ -44,6 +44,34 @@ int authenticate(const char *username, const char *password) {
     }
     return 0; // Authentication failed
 }
+void *handle_client(void *arg) {
+    int client_socket = *(int *)arg;
+    char buffer[MAX_BUFFER_SIZE];
+    int bytes_read;
+
+    // Send a welcome message to the client
+    send(client_socket, "Welcome to Bob's file server.\n", 29, 0);
+
+    char username[MAX_USERNAME_SIZE] = "";
+    int authenticated = 0;
+
+    while (1) {
+        memset(buffer, 0, sizeof(buffer));
+        bytes_read = recv(client_socket, buffer, MAX_BUFFER_SIZE - 1, 0);
+        if (bytes_read <= 0) {
+            printf("Client disconnected or error occurred\n");
+            break;
+        }
+
+        printf("Received command: %s\n", buffer);
+        char command[50];
+        sscanf(buffer, "%s", command);
+    }
+    close(client_socket);
+    return NULL;
+}
+
+
 
 void load_credentials(const char *filename);
 int authenticate(const char *username, const char *password);
