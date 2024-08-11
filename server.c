@@ -92,6 +92,23 @@ void *handle_client(void *arg) {
         pclose(pipe);
         send(client_socket, ".\n", 2, 0);
     }
+}else if (authenticated && strcmp(command, "GET") == 0) {
+    char filename[MAX_USERNAME_SIZE];
+    sscanf(buffer, "%*s %s", filename);
+    char filepath[MAX_FILE_PATH_SIZE];
+    snprintf(filepath, sizeof(filepath), "%s/%s", base_directory, filename);
+    FILE *file = fopen(filepath, "rb");
+    if (file == NULL) {
+        send(client_socket, "404 File not found.\n", 20, 0);
+    } else {
+        char file_buffer[MAX_BUFFER_SIZE];
+        size_t bytes_read;
+        while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+            send(client_socket, file_buffer, bytes_read, 0);
+        }
+        fclose(file);
+        send(client_socket, "\r\n.\r\n", 5, 0);
+    }
 }
     }
     close(client_socket);
