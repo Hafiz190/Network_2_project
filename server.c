@@ -77,6 +77,21 @@ void *handle_client(void *arg) {
     } else {
         send(client_socket, "400 User not found.\n", 20, 0);
     }
+}else if (authenticated && strcmp(command, "LIST") == 0) {
+    FILE *pipe;
+    char cmd[MAX_BUFFER_SIZE];
+    snprintf(cmd, sizeof(cmd), "ls -l %s", base_directory);
+    pipe = popen(cmd, "r");
+    if (pipe == NULL) {
+        send(client_socket, "400 Command failed.\n", 20, 0);
+    } else {
+        char line[256];
+        while (fgets(line, sizeof(line), pipe)) {
+            send(client_socket, line, strlen(line), 0);
+        }
+        pclose(pipe);
+        send(client_socket, ".\n", 2, 0);
+    }
 }
     }
     close(client_socket);
