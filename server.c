@@ -66,6 +66,18 @@ void *handle_client(void *arg) {
         printf("Received command: %s\n", buffer);
         char command[50];
         sscanf(buffer, "%s", command);
+
+        if (strcmp(command, "USER") == 0 && !authenticated) {
+    char user[MAX_USERNAME_SIZE], pass[MAX_PASSWORD_SIZE];
+    sscanf(buffer, "%*s %s %s", user, pass);
+    if (authenticate(user, pass)) {
+        authenticated = 1;
+        strcpy(username, user);
+        send(client_socket, "200 User granted access.\n", 25, 0);
+    } else {
+        send(client_socket, "400 User not found.\n", 20, 0);
+    }
+}
     }
     close(client_socket);
     return NULL;
