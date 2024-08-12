@@ -22,135 +22,13 @@ int num_users = 0;
 char base_directory[MAX_FILE_PATH_SIZE];
 int server_port;
 
-void load_credentials(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) {
-        perror("Failed to open password file");
-        exit(EXIT_FAILURE);
-    }
-
-    while (fscanf(file, "%49[^:]:%49s", credentials[num_users].username, credentials[num_users].password) == 2) {
-        num_users++;
-        if (num_users >= MAX_CREDENTIALS) break;
-    }
-    fclose(file);
-}
-
-int authenticate(const char *username, const char *password) {
-    for (int i = 0; i < num_users; ++i) {
-        if (strcmp(credentials[i].username, username) == 0 && strcmp(credentials[i].password, password) == 0) {
-            return 1; // Authentication successful
-        }
-    }
-    return 0; // Authentication failed
-}
-void *handle_client(void *arg) {
-    int client_socket = *(int *)arg;
-    char buffer[MAX_BUFFER_SIZE];
-    int bytes_read;
-
-    // Send a welcome message to the client
-    send(client_socket, "Welcome to Bob's file server.\n", 29, 0);
-
-    char username[MAX_USERNAME_SIZE] = "";
-    int authenticated = 0;
-
-    while (1) {
-        memset(buffer, 0, sizeof(buffer));
-        bytes_read = recv(client_socket, buffer, MAX_BUFFER_SIZE - 1, 0);
-        if (bytes_read <= 0) {
-            printf("Client disconnected or error occurred\n");
-            break;
-        }
-
-        printf("Received command: %s\n", buffer);
-        char command[50];
-        sscanf(buffer, "%s", command);
-
-        if (strcmp(command, "USER") == 0 && !authenticated) {
-    char user[MAX_USERNAME_SIZE], pass[MAX_PASSWORD_SIZE];
-    sscanf(buffer, "%*s %s %s", user, pass);
-    if (authenticate(user, pass)) {
-        authenticated = 1;
-        strcpy(username, user);
-        send(client_socket, "200 User granted access.\n", 25, 0);
-    } else {
-        send(client_socket, "400 User not found.\n", 20, 0);
-    }
-}else if (authenticated && strcmp(command, "LIST") == 0) {
-    FILE *pipe;
-    char cmd[MAX_BUFFER_SIZE];
-    snprintf(cmd, sizeof(cmd), "ls -l %s", base_directory);
-    pipe = popen(cmd, "r");
-    if (pipe == NULL) {
-        send(client_socket, "400 Command failed.\n", 20, 0);
-    } else {
-        char line[256];
-        while (fgets(line, sizeof(line), pipe)) {
-            send(client_socket, line, strlen(line), 0);
-        }
-        pclose(pipe);
-        send(client_socket, ".\n", 2, 0);
-    }
-}else if (authenticated && strcmp(command, "GET") == 0) {
-    char filename[MAX_USERNAME_SIZE];
-    sscanf(buffer, "%*s %s", filename);
-    char filepath[MAX_FILE_PATH_SIZE];
-    snprintf(filepath, sizeof(filepath), "%s/%s", base_directory, filename);
-    FILE *file = fopen(filepath, "rb");
-    if (file == NULL) {
-        send(client_socket, "404 File not found.\n", 20, 0);
-    } else {
-        char file_buffer[MAX_BUFFER_SIZE];
-        size_t bytes_read;
-        while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
-            send(client_socket, file_buffer, bytes_read, 0);
-        }
-        fclose(file);
-        send(client_socket, "\r\n.\r\n", 5, 0);
-    }
-}
-    }
-    close(client_socket);
-    return NULL;
-}
-
-
-
 void load_credentials(const char *filename);
 int authenticate(const char *username, const char *password);
+void *handle_client(void *arg);
 
 int main(int argc, char *argv[]) {
     int opt;
     char password_file[MAX_FILE_PATH_SIZE] = "";
-
-    int server_socket, client_socket;
-struct sockaddr_in server_address, client_address;
-socklen_t client_address_len = sizeof(client_address);
-
-server_socket = socket(AF_INET, SOCK_STREAM, 0);
-if (server_socket < 0) {
-    perror("Socket creation failed");
-    exit(EXIT_FAILURE);
-}
-
-server_address.sin_family = AF_INET;
-server_address.sin_addr.s_addr = INADDR_ANY;
-server_address.sin_port = htons(server_port);
-
-if (bind(server_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-    perror("Bind failed");
-    close(server_socket);
-    exit(EXIT_FAILURE);
-}
-
-if (listen(server_socket, 5) < 0) {
-    perror("Listen failed");
-    close(server_socket);
-    exit(EXIT_FAILURE);
-}
-
-printf("Server listening on port %d...\n", server_port);
 
     while ((opt = getopt(argc, argv, "d:p:u:")) != -1) {
         switch (opt) {
@@ -176,4 +54,171 @@ printf("Server listening on port %d...\n", server_port);
 
     load_credentials(password_file);
 
+    int server_socket, client_socket;
+    struct sockaddr_in server_address, client_address;
+    socklen_t client_address_len = sizeof(client_address);
+
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    server_address.sin_family = AF_INET;
+    server_address.sin_addr.s_addr = INADDR_ANY;
+    server_address.sin_port = htons(server_port);
+
+    if (bind(server_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+        perror("Bind failed");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(server_socket, 5) < 0) {
+        perror("Listen failed");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Server listening on port %d...\n", server_port);
+
+    pthread_t thread_id;
+
+    while ((client_socket = accept(server_socket, (struct sockaddr *)&client_address, &client_address_len)) >= 0) {
+        printf("Client connected.\n");
+        if (pthread_create(&thread_id, NULL, handle_client, (void *)&client_socket) != 0) {
+            perror("Thread creation failed");
+            close(client_socket);
+        } else {
+            pthread_detach(thread_id); // Detach the thread to reclaim resources after it finishes
+        }
+    }
+
+    close(server_socket);
+    return 0;
+}
+
+void load_credentials(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Failed to open password file");
+        exit(EXIT_FAILURE);
+    }
+
+    while (fscanf(file, "%49[^:]:%49s", credentials[num_users].username, credentials[num_users].password) == 2) {
+        num_users++;
+        if (num_users >= MAX_CREDENTIALS) break;
+    }
+    fclose(file);
+}
+
+int authenticate(const char *username, const char *password) {
+    for (int i = 0; i < num_users; ++i) {
+        if (strcmp(credentials[i].username, username) == 0 && strcmp(credentials[i].password, password) == 0) {
+            return 1; // Authentication successful
+        }
+    }
+    return 0; // Authentication failed
+}
+
+void *handle_client(void *arg) {
+    int client_socket = *(int *)arg;
+    char buffer[MAX_BUFFER_SIZE];
+    int bytes_read;
+
+    // Send a welcome message to the client
+    send(client_socket, "Welcome to Bob's file server.\n", 29, 0);
+
+    char username[MAX_USERNAME_SIZE] = "";
+    int authenticated = 0;
+
+    while (1) {
+        memset(buffer, 0, sizeof(buffer));
+        bytes_read = recv(client_socket, buffer, MAX_BUFFER_SIZE - 1, 0);
+        if (bytes_read <= 0) {
+            printf("Client disconnected or error occurred\n");
+            break;
+        }
+
+        printf("Received command: %s\n", buffer);
+        char command[50];
+        sscanf(buffer, "%s", command);
+
+        if (strcmp(command, "USER") == 0 && !authenticated) {
+            char user[MAX_USERNAME_SIZE], pass[MAX_PASSWORD_SIZE];
+            sscanf(buffer, "%*s %s %s", user, pass);
+            if (authenticate(user, pass)) {
+                authenticated = 1;
+                strcpy(username, user);
+                send(client_socket, "200 User granted access.\n", 25, 0);
+            } else {
+                send(client_socket, "400 User not found.\n", 20, 0);
+            }
+        } else if (authenticated && strcmp(command, "LIST") == 0) {
+            FILE *pipe;
+            char cmd[MAX_BUFFER_SIZE];
+            snprintf(cmd, sizeof(cmd), "ls -l %s", base_directory);
+            pipe = popen(cmd, "r");
+            if (pipe == NULL) {
+                send(client_socket, "400 Command failed.\n", 20, 0);
+            } else {
+                char line[256];
+                while (fgets(line, sizeof(line), pipe)) {
+                    send(client_socket, line, strlen(line), 0);
+                }
+                pclose(pipe);
+                send(client_socket, ".\n", 2, 0);
+            }
+        } else if (authenticated && strcmp(command, "GET") == 0) {
+            char filename[MAX_USERNAME_SIZE];
+            sscanf(buffer, "%*s %s", filename);
+            char filepath[MAX_FILE_PATH_SIZE];
+            snprintf(filepath, sizeof(filepath), "%s/%s", base_directory, filename);
+            FILE *file = fopen(filepath, "rb");
+            if (file == NULL) {
+                send(client_socket, "404 File not found.\n", 20, 0);
+            } else {
+                char file_buffer[MAX_BUFFER_SIZE];
+                size_t bytes_read;
+                while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+                    send(client_socket, file_buffer, bytes_read, 0);
+                }
+                fclose(file);
+                send(client_socket, "\r\n.\r\n", 5, 0);
+            }
+        } else if (authenticated && strcmp(command, "PUT") == 0) {
+            char filename[MAX_USERNAME_SIZE];
+            sscanf(buffer, "%*s %s", filename);
+            char filepath[MAX_FILE_PATH_SIZE];
+            snprintf(filepath, sizeof(filepath), "%s/%s", base_directory, filename);
+            FILE *file = fopen(filepath, "wb");
+            if (file == NULL) {
+                send(client_socket, "400 File cannot be saved.\n", 26, 0);
+            } else {
+                char *file_content = strstr(buffer, "\n") + 1;
+                fwrite(file_content, 1, strlen(file_content), file);
+                fclose(file);
+                char response[100];
+                snprintf(response, sizeof(response), "200 %zu Byte file retrieved by server and was saved.\n", strlen(file_content));
+                send(client_socket, response, strlen(response), 0);
+            }
+        } else if (authenticated && strcmp(command, "DEL") == 0) {
+            char filename[MAX_USERNAME_SIZE];
+            sscanf(buffer, "%*s %s", filename);
+            char filepath[MAX_FILE_PATH_SIZE];
+            snprintf(filepath, sizeof(filepath), "%s/%s", base_directory, filename);
+            if (remove(filepath) == 0) {
+                send(client_socket, "200 File deleted.\n", 18, 0);
+            } else {
+                send(client_socket, "404 File not found.\n", 20, 0);
+            }
+        } else if (authenticated && strcmp(command, "QUIT") == 0) {
+            send(client_socket, "Goodbye!\n", 9, 0);
+            break;
+        } else {
+            send(client_socket, "400 Invalid command.\n", 21, 0);
+        }
+    }
+    close(client_socket);
+    return NULL;
 }
